@@ -1,0 +1,19 @@
+{
+  "target_prompt": "translate.txt",
+  "language": "korean",
+  "model": "gpt-5.2",
+  "parallelism": 6,
+
+  "target_font": "NanumGothic.ttf",
+
+  "mathpix_app_id": "",
+  "mathpix_app_key": "",
+  "mathpix_fallback_convert_py": "../InnoCore/convert.py",
+
+  "openai_api_key": "",
+
+  "render_dpi": 144,
+  "sentence_indent_ratio": 0.015,
+  "sentence_spacing_factor": 1.6,
+  "sentence_min_text_len": 1
+}

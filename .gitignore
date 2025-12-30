@@ -1,0 +1,19 @@
+# outputs
+conversion/*
+!conversion/.gitkeep
+translation/*
+!translation/.gitkeep
+fonts/*.ttf
+fonts/*.otf
+fonts/*.ttc
+fonts/*.woff
+fonts/*.woff2
+!fonts/.gitkeep
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# misc
+.DS_Store
