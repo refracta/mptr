@@ -173,6 +173,30 @@ async def translate_sentences(
             )
             return
 
+        if bool(s.meta.get("translate", True)) is False:
+            tr = TranslationResult(
+                sentence_id=s.sentence_id,
+                source_text=s.source_text,
+                translated_text=s.source_text,
+                model="skip",
+                response_id=None,
+                usage=None,
+                created_at=_now_utc(),
+            )
+            async with lock:
+                results[s.sentence_id] = tr
+                cache[s.sentence_id] = {
+                    "sentence_id": tr.sentence_id,
+                    "source_text": tr.source_text,
+                    "translated_text": tr.translated_text,
+                    "model": tr.model,
+                    "response_id": tr.response_id,
+                    "usage": tr.usage,
+                    "created_at": tr.created_at,
+                }
+                write_json(cache_path, cache)
+            return
+
         async with sem:
             tr = await _translate_one(
                 client,

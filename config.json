@@ -13,7 +13,12 @@
   "openai_api_key": "",
 
   "render_dpi": 144,
+  "render_padding": 1.0,
+  "highlight_opacity": 0.25,
+  "render_align": "justify",
+
   "sentence_indent_ratio": 0.015,
   "sentence_spacing_factor": 1.6,
-  "sentence_min_text_len": 1
+  "sentence_min_text_len": 1,
+  "include_math_lines": true
 }

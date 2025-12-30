@@ -6,6 +6,8 @@ import asyncio
 import shutil
 from pathlib import Path
 
+import fitz  # PyMuPDF
+
 from highlight import create_sentence_highlight_pdf
 from images import export_pdf_pages_to_png, whiteout_sentence_regions
 from mathpix import ensure_converted
@@ -40,6 +42,17 @@ def _load_prompt(*, config: dict, repo_dir: Path) -> str:
     prompt_path = repo_dir / "prompts" / prompt_name
     template = prompt_path.read_text(encoding="utf-8")
     return render_prompt_template(template, config)
+
+
+def _resolve_align(config: dict) -> int:
+    raw = str(config.get("render_align") or "justify").strip().lower()
+    mapping = {
+        "left": fitz.TEXT_ALIGN_LEFT,
+        "center": fitz.TEXT_ALIGN_CENTER,
+        "right": fitz.TEXT_ALIGN_RIGHT,
+        "justify": fitz.TEXT_ALIGN_JUSTIFY,
+    }
+    return int(mapping.get(raw, fitz.TEXT_ALIGN_JUSTIFY))
 
 
 def _next_run_dir(base: Path, docname: str) -> Path:
@@ -140,6 +153,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         indent_ratio=float(config.get("sentence_indent_ratio") or 0.015),
         spacing_factor=float(config.get("sentence_spacing_factor") or 1.6),
         min_text_len=int(config.get("sentence_min_text_len") or 1),
+        include_math=bool(config.get("include_math_lines", True)),
     )
 
     run_dir = _next_run_dir(repo_dir / "translation", docname)
@@ -196,6 +210,7 @@ def cmd_all(args: argparse.Namespace) -> int:
 
     # 6) Render translation PDFs
     font_path = _resolve_font_path(config=config, repo_dir=repo_dir)
+    align = _resolve_align(config)
     korean_out = run_dir / f"{docname}.korean.pdf"
     both_out = run_dir / f"{docname}.korean.both.pdf"
 
@@ -207,6 +222,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         output_path=korean_out,
         whiteout=True,
         padding=float(config.get("render_padding") or 1.0),
+        align=align,
     )
     stats_both = render_side_by_side_pdf(
         pdf_path=pdf_path,
@@ -216,6 +232,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         output_path=both_out,
         padding=float(config.get("render_padding") or 1.0),
         separator=True,
+        align=align,
     )
 
     write_json(
@@ -250,6 +267,7 @@ def cmd_translate(args: argparse.Namespace) -> int:
         indent_ratio=float(config.get("sentence_indent_ratio") or 0.015),
         spacing_factor=float(config.get("sentence_spacing_factor") or 1.6),
         min_text_len=int(config.get("sentence_min_text_len") or 1),
+        include_math=bool(config.get("include_math_lines", True)),
     )
 
     run_dir = _next_run_dir(repo_dir / "translation", docname)
@@ -289,9 +307,7 @@ def cmd_render(args: argparse.Namespace) -> int:
 
     config = load_config(normalize_path(args.config).resolve())
     font_path = _resolve_font_path(config=config, repo_dir=repo_dir)
-
-    sentences = _load_sentences(artifacts_dir / "sentences.json")
-    translations = _extract_translations(artifacts_dir / "translations" / "translations_cache.json")
+    align = _resolve_align(config)
 
     docname = _docname_from_run_dir(run_dir)
     expected_pdf = run_dir / f"{docname}.pdf"
@@ -304,6 +320,28 @@ def cmd_render(args: argparse.Namespace) -> int:
         # Fall back to a best-effort guess.
         pdf_path = sorted(pdf_candidates, key=lambda p: (".highlight" in p.stem, ".korean" in p.stem, p.name))[0]
 
+    if bool(getattr(args, "rebuild_sentences", False)):
+        conv_dir = (repo_dir / "conversion" / f"{docname}.pdf").resolve()
+        lines_json_path = conv_dir / f"{docname}.lines.json"
+        lines_json = read_json(lines_json_path)
+        sentences = sentences_from_lines_json(
+            lines_json,
+            indent_ratio=float(config.get("sentence_indent_ratio") or 0.015),
+            spacing_factor=float(config.get("sentence_spacing_factor") or 1.6),
+            min_text_len=int(config.get("sentence_min_text_len") or 1),
+            include_math=bool(config.get("include_math_lines", True)),
+        )
+        _save_sentences(artifacts_dir / "sentences.json", sentences)
+    else:
+        sentences = _load_sentences(artifacts_dir / "sentences.json")
+
+    translations = _extract_translations(artifacts_dir / "translations" / "translations_cache.json")
+    for s in sentences:
+        if s.sentence_id in translations:
+            continue
+        if bool(s.meta.get("translate", True)) is False:
+            translations[s.sentence_id] = s.source_text
+
     korean_out = run_dir / f"{docname}.korean.pdf"
     both_out = run_dir / f"{docname}.korean.both.pdf"
     render_korean_pdf(
@@ -314,6 +352,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         output_path=korean_out,
         whiteout=True,
         padding=float(config.get("render_padding") or 1.0),
+        align=align,
     )
     render_side_by_side_pdf(
         pdf_path=pdf_path,
@@ -323,6 +362,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         output_path=both_out,
         padding=float(config.get("render_padding") or 1.0),
         separator=True,
+        align=align,
     )
     print("OK")
     return 0
@@ -351,6 +391,11 @@ def main() -> int:
 
     p_render = sub.add_parser("render", help="Render PDFs again from a run folder")
     p_render.add_argument("--run", required=True, help="Run folder path (translation/<DOC>.<N>.pdf)")
+    p_render.add_argument(
+        "--rebuild-sentences",
+        action="store_true",
+        help="Rebuild sentence regions from cached conversion/<DOC>.pdf/<DOC>.lines.json before rendering",
+    )
     p_render.set_defaults(func=cmd_render)
 
     args = parser.parse_args()

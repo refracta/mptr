@@ -33,6 +33,28 @@ def _looks_like_new_item(text: str) -> bool:
     )
 
 
+def _is_math_only_line(line: dict) -> bool:
+    """
+    Heuristic: treat a line as "math-only" if it is explicitly tagged as math-like
+    by Mathpix, or if it consists solely of TeX math spans (\\(...\\) / \\[...\\]).
+    """
+    t = str(line.get("type") or "")
+    if t in {"math", "equation_number"}:
+        return True
+
+    text = str(line.get("text") or line.get("text_display") or "").strip()
+    if not text:
+        return False
+
+    # If the whole line is one or more TeX math spans with no surrounding text,
+    # consider it math-only (even if Mathpix labeled it as "text").
+    if t == "text":
+        if re.match(r"^(?:\s*(\\\(.+?\\\)|\\\[.+?\\\])\s*)+$", text, flags=re.DOTALL):
+            return True
+
+    return False
+
+
 def _union_region(lines: list[dict]) -> dict:
     x0 = float("inf")
     y0 = float("inf")
@@ -87,6 +109,8 @@ def build_sentence_groups(
         if line.get("type") != "text":
             continue
         if not isinstance(line.get("region"), dict):
+            continue
+        if _is_math_only_line(line):
             continue
         text = (line.get("text") or "").strip()
         if len(text) < min_text_len:
@@ -158,6 +182,7 @@ def sentences_from_lines_json(
     indent_ratio: float = 0.015,
     spacing_factor: float = 1.6,
     min_text_len: int = 1,
+    include_math: bool = True,
 ) -> list[Sentence]:
     sentences: list[Sentence] = []
     pages = lines_json.get("pages") or []
@@ -199,5 +224,46 @@ def sentences_from_lines_json(
                     },
                 )
             )
+
+        if include_math:
+            # Add standalone math / equation-number lines as separate, non-translated sentences.
+            math_like: list[dict] = []
+            for line in page.get("lines", []):
+                if not isinstance(line.get("region"), dict):
+                    continue
+                if not _is_math_only_line(line):
+                    continue
+                text = str(line.get("text") or line.get("text_display") or "").strip()
+                if not text:
+                    continue
+                math_like.append(line)
+
+            # Stable order: top-to-bottom, left-to-right.
+            math_like.sort(key=lambda l: (_line_bbox(l)[1], _line_bbox(l)[0]))
+
+            for idx, line in enumerate(math_like):
+                col = int(line.get("column") or 0)
+                line_id = str(line.get("id") or f"m{idx}")
+                kind = str(line.get("type") or "math")
+                if kind == "text":
+                    kind = "math"
+                source_text = str(line.get("text") or line.get("text_display") or "").strip()
+                sentences.append(
+                    Sentence(
+                        sentence_id=f"p{page_num}-c{col}-{kind}-{line_id}",
+                        page=page_num,
+                        column=col,
+                        page_width=page_width,
+                        page_height=page_height,
+                        region=dict(line["region"]),
+                        source_text=source_text,
+                        line_ids=[line_id],
+                        meta={
+                            "kind": kind,
+                            "group_index": idx,
+                            "translate": False,
+                        },
+                    )
+                )
 
     return sentences

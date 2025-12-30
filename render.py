@@ -22,6 +22,16 @@ def _has_tex(text: str) -> bool:
     return any(isinstance(p, TexSpan) for p in split_text_with_tex(text))
 
 
+def _css_text_align(align: int) -> str:
+    if int(align) == fitz.TEXT_ALIGN_CENTER:
+        return "center"
+    if int(align) == fitz.TEXT_ALIGN_RIGHT:
+        return "right"
+    if int(align) == fitz.TEXT_ALIGN_JUSTIFY:
+        return "justify"
+    return "left"
+
+
 def _region_to_rect(
     region: dict,
     *,
@@ -43,7 +53,15 @@ def _region_to_rect(
     return rect
 
 
-def _fits_text(*, text: str, rect: fitz.Rect, fontname: str, fontfile: Path, fontsize: float) -> bool:
+def _fits_text(
+    *,
+    text: str,
+    rect: fitz.Rect,
+    fontname: str,
+    fontfile: Path,
+    fontsize: float,
+    align: int,
+) -> bool:
     doc = fitz.open()
     try:
         page = doc.new_page(width=max(1.0, rect.width), height=max(1.0, rect.height))
@@ -54,6 +72,7 @@ def _fits_text(*, text: str, rect: fitz.Rect, fontname: str, fontfile: Path, fon
             fontname=fontname,
             fontfile=str(fontfile),
             fontsize=float(fontsize),
+            align=int(align),
             overlay=True,
         )
         return res >= 0
@@ -69,13 +88,14 @@ def _choose_font_size(
     fontfile: Path,
     max_size: float,
     min_size: float,
+    align: int,
 ) -> float:
     lo = float(min_size)
     hi = float(max_size)
     best = lo
     for _ in range(10):
         mid = (lo + hi) / 2.0
-        if _fits_text(text=text, rect=rect, fontname=fontname, fontfile=fontfile, fontsize=mid):
+        if _fits_text(text=text, rect=rect, fontname=fontname, fontfile=fontfile, fontsize=mid, align=align):
             best = mid
             lo = mid
         else:
@@ -92,6 +112,7 @@ def render_korean_pdf(
     output_path: str | Path,
     whiteout: bool = True,
     padding: float = 1.0,
+    align: int = fitz.TEXT_ALIGN_JUSTIFY,
 ) -> RenderStats:
     pdf_path = normalize_path(str(pdf_path)).resolve()
     output_path = normalize_path(str(output_path)).resolve()
@@ -104,9 +125,11 @@ def render_korean_pdf(
 
     font_archive = fitz.Archive()
     font_archive.add((font_path.read_bytes(), "mptr-target.ttf"))
+    css_align = _css_text_align(align)
     css = (
         '@font-face { font-family: MptrTarget; src: url("mptr-target.ttf"); }\n'
-        ".mptr { font-family: MptrTarget; line-height: 1.2; white-space: pre-wrap; }\n"
+        f".mptr {{ font-family: MptrTarget; line-height: 1.2; white-space: pre-wrap; text-align: {css_align}; }}\n"
+        ".mptr { word-break: break-word; overflow-wrap: anywhere; }\n"
         ".mptr svg { vertical-align: -0.2ex; }\n"
         ".mptr-math-block { text-align: center; margin: 0.2em 0; }\n"
     )
@@ -186,6 +209,7 @@ def render_korean_pdf(
                         fontfile=font_path,
                         max_size=max_size,
                         min_size=min_size,
+                        align=int(align),
                     )
 
                     res = page.insert_textbox(
@@ -194,6 +218,7 @@ def render_korean_pdf(
                         fontname=fontname,
                         fontfile=str(font_path),
                         fontsize=float(fontsize),
+                        align=int(align),
                         color=(0, 0, 0),
                         overlay=True,
                     )
@@ -217,6 +242,7 @@ def render_side_by_side_pdf(
     output_path: str | Path,
     padding: float = 1.0,
     separator: bool = True,
+    align: int = fitz.TEXT_ALIGN_JUSTIFY,
 ) -> RenderStats:
     pdf_path = normalize_path(str(pdf_path)).resolve()
     output_path = normalize_path(str(output_path)).resolve()
@@ -228,9 +254,11 @@ def render_side_by_side_pdf(
 
     font_archive = fitz.Archive()
     font_archive.add((font_path.read_bytes(), "mptr-target.ttf"))
+    css_align = _css_text_align(align)
     css = (
         '@font-face { font-family: MptrTarget; src: url("mptr-target.ttf"); }\n'
-        ".mptr { font-family: MptrTarget; line-height: 1.2; white-space: pre-wrap; }\n"
+        f".mptr {{ font-family: MptrTarget; line-height: 1.2; white-space: pre-wrap; text-align: {css_align}; }}\n"
+        ".mptr { word-break: break-word; overflow-wrap: anywhere; }\n"
         ".mptr svg { vertical-align: -0.2ex; }\n"
         ".mptr-math-block { text-align: center; margin: 0.2em 0; }\n"
     )
@@ -320,6 +348,7 @@ def render_side_by_side_pdf(
                         fontfile=font_path,
                         max_size=max_size,
                         min_size=min_size,
+                        align=int(align),
                     )
                     res = new_page.insert_textbox(
                         r,
@@ -327,6 +356,7 @@ def render_side_by_side_pdf(
                         fontname=fontname,
                         fontfile=str(font_path),
                         fontsize=float(fontsize),
+                        align=int(align),
                         color=(0, 0, 0),
                         overlay=True,
                     )
