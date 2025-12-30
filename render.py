@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,48 @@ def _css_text_align(align: int) -> str:
     return "left"
 
 
+def _fits_html(*, html_doc: str, css: str, archive: fitz.Archive, rect: fitz.Rect) -> bool:
+    doc = fitz.open()
+    try:
+        page = doc.new_page(width=max(1.0, rect.width), height=max(1.0, rect.height))
+        test_rect = fitz.Rect(0, 0, rect.width, rect.height)
+        spare, _scale = page.insert_htmlbox(
+            test_rect,
+            html_doc,
+            css=css,
+            scale_low=1,
+            archive=archive,
+            overlay=True,
+        )
+        return spare >= 0
+    finally:
+        doc.close()
+
+
+def _choose_html_font_size(
+    *,
+    html_body: str,
+    css: str,
+    archive: fitz.Archive,
+    rect: fitz.Rect,
+    max_size: float,
+    min_size: float,
+) -> float:
+    lo = float(min_size)
+    hi = float(max_size)
+    best = lo
+    # Binary search for the largest font size that fits without scaling.
+    for _ in range(10):
+        mid = (lo + hi) / 2.0
+        html_doc = f'<div class="mptr" style="font-size:{mid:.4f}pt">{html_body}</div>'
+        if _fits_html(html_doc=html_doc, css=css, archive=archive, rect=rect):
+            best = mid
+            lo = mid
+        else:
+            hi = mid
+    return best
+
+
 def _region_to_rect(
     region: dict,
     *,
@@ -51,56 +94,6 @@ def _region_to_rect(
         rect.x1 -= padding
         rect.y1 -= padding
     return rect
-
-
-def _fits_text(
-    *,
-    text: str,
-    rect: fitz.Rect,
-    fontname: str,
-    fontfile: Path,
-    fontsize: float,
-    align: int,
-) -> bool:
-    doc = fitz.open()
-    try:
-        page = doc.new_page(width=max(1.0, rect.width), height=max(1.0, rect.height))
-        test_rect = fitz.Rect(0, 0, rect.width, rect.height)
-        res = page.insert_textbox(
-            test_rect,
-            text,
-            fontname=fontname,
-            fontfile=str(fontfile),
-            fontsize=float(fontsize),
-            align=int(align),
-            overlay=True,
-        )
-        return res >= 0
-    finally:
-        doc.close()
-
-
-def _choose_font_size(
-    *,
-    text: str,
-    rect: fitz.Rect,
-    fontname: str,
-    fontfile: Path,
-    max_size: float,
-    min_size: float,
-    align: int,
-) -> float:
-    lo = float(min_size)
-    hi = float(max_size)
-    best = lo
-    for _ in range(10):
-        mid = (lo + hi) / 2.0
-        if _fits_text(text=text, rect=rect, fontname=fontname, fontfile=fontfile, fontsize=mid, align=align):
-            best = mid
-            lo = mid
-        else:
-            hi = mid
-    return best
 
 
 def render_korean_pdf(
@@ -130,7 +123,7 @@ def render_korean_pdf(
     css = (
         '@font-face { font-family: MptrTarget; src: url("mptr-target.ttf"); }\n'
         f".mptr {{ font-family: MptrTarget; line-height: 1.2; white-space: pre-wrap; text-align: {css_align}; }}\n"
-        ".mptr { word-break: break-word; overflow-wrap: anywhere; }\n"
+        ".mptr { word-break: break-all; overflow-wrap: anywhere; }\n"
         ".mptr svg { vertical-align: -0.2ex; }\n"
         ".mptr-math-block { text-align: center; margin: 0.2em 0; }\n"
     )
@@ -186,45 +179,41 @@ def render_korean_pdf(
                 max_size = min(24.0, max(6.0, r.height * 0.9))
                 min_size = max(4.0, min(8.0, r.height * 0.35))
 
-                if _has_tex(text):
-                    scale_low = max(0.0, min(1.0, float(min_size) / float(max_size or 1.0)))
-                    html_body = build_html_with_math(text, svg_map)
-                    html_doc = f'<div class="mptr" style="font-size:{max_size:.2f}pt">{html_body}</div>'
-                    spare, scale = page.insert_htmlbox(
+                html_body = (
+                    build_html_with_math(text, svg_map)
+                    if _has_tex(text)
+                    else html.escape(text)
+                )
+                fontsize = _choose_html_font_size(
+                    html_body=html_body,
+                    css=css,
+                    archive=font_archive,
+                    rect=r,
+                    max_size=max_size,
+                    min_size=min_size,
+                )
+                html_doc = f'<div class="mptr" style="font-size:{fontsize:.4f}pt">{html_body}</div>'
+                spare, _scale = page.insert_htmlbox(
+                    r,
+                    html_doc,
+                    css=css,
+                    scale_low=1,
+                    archive=font_archive,
+                    overlay=True,
+                )
+                inserted += 1
+                if spare < 0:
+                    # Fallback: force-fit by scaling down below min_size if needed.
+                    html_doc_min = f'<div class="mptr" style="font-size:{min_size:.4f}pt">{html_body}</div>'
+                    spare2, _scale2 = page.insert_htmlbox(
                         r,
-                        html_doc,
+                        html_doc_min,
                         css=css,
-                        scale_low=scale_low,
+                        scale_low=0,
                         archive=font_archive,
                         overlay=True,
                     )
-                    inserted += 1
-                    if spare < 0 or scale < scale_low:
-                        overflow += 1
-                else:
-                    fontname = "mptr-font"
-                    fontsize = _choose_font_size(
-                        text=text,
-                        rect=r,
-                        fontname=fontname,
-                        fontfile=font_path,
-                        max_size=max_size,
-                        min_size=min_size,
-                        align=int(align),
-                    )
-
-                    res = page.insert_textbox(
-                        r,
-                        text,
-                        fontname=fontname,
-                        fontfile=str(font_path),
-                        fontsize=float(fontsize),
-                        align=int(align),
-                        color=(0, 0, 0),
-                        overlay=True,
-                    )
-                    inserted += 1
-                    if res < 0:
+                    if spare2 < 0:
                         overflow += 1
 
         doc.save(output_path, garbage=4, deflate=True)
@@ -260,7 +249,7 @@ def render_side_by_side_pdf(
     css = (
         '@font-face { font-family: MptrTarget; src: url("mptr-target.ttf"); }\n'
         f".mptr {{ font-family: MptrTarget; line-height: 1.2; white-space: pre-wrap; text-align: {css_align}; }}\n"
-        ".mptr { word-break: break-word; overflow-wrap: anywhere; }\n"
+        ".mptr { word-break: break-all; overflow-wrap: anywhere; }\n"
         ".mptr svg { vertical-align: -0.2ex; }\n"
         ".mptr-math-block { text-align: center; margin: 0.2em 0; }\n"
     )
@@ -284,6 +273,8 @@ def render_side_by_side_pdf(
 
             # Left: original page as vector.
             new_page.show_pdf_page(fitz.Rect(0, 0, w, h), src, page_index)
+            # Right: original page duplicated (so figures / diagrams remain visible).
+            new_page.show_pdf_page(fitz.Rect(w, 0, w * 2.0, h), src, page_index)
 
             if separator:
                 new_page.draw_line(
@@ -323,47 +314,53 @@ def render_side_by_side_pdf(
                     skipped += 1
                     continue
 
+                # Whiteout original text on the right copy, then add translated text.
+                new_page.draw_rect(
+                    r,
+                    color=None,
+                    fill=(1, 1, 1),
+                    width=0,
+                    overlay=True,
+                    fill_opacity=1,
+                )
+
                 max_size = min(24.0, max(6.0, r.height * 0.9))
                 min_size = max(4.0, min(8.0, r.height * 0.35))
 
-                if _has_tex(text):
-                    scale_low = max(0.0, min(1.0, float(min_size) / float(max_size or 1.0)))
-                    html_body = build_html_with_math(text, svg_map)
-                    html_doc = f'<div class="mptr" style="font-size:{max_size:.2f}pt">{html_body}</div>'
-                    spare, scale = new_page.insert_htmlbox(
+                html_body = (
+                    build_html_with_math(text, svg_map)
+                    if _has_tex(text)
+                    else html.escape(text)
+                )
+                fontsize = _choose_html_font_size(
+                    html_body=html_body,
+                    css=css,
+                    archive=font_archive,
+                    rect=r,
+                    max_size=max_size,
+                    min_size=min_size,
+                )
+                html_doc = f'<div class="mptr" style="font-size:{fontsize:.4f}pt">{html_body}</div>'
+                spare, _scale = new_page.insert_htmlbox(
+                    r,
+                    html_doc,
+                    css=css,
+                    scale_low=1,
+                    archive=font_archive,
+                    overlay=True,
+                )
+                inserted += 1
+                if spare < 0:
+                    html_doc_min = f'<div class="mptr" style="font-size:{min_size:.4f}pt">{html_body}</div>'
+                    spare2, _scale2 = new_page.insert_htmlbox(
                         r,
-                        html_doc,
+                        html_doc_min,
                         css=css,
-                        scale_low=scale_low,
+                        scale_low=0,
                         archive=font_archive,
                         overlay=True,
                     )
-                    inserted += 1
-                    if spare < 0 or scale < scale_low:
-                        overflow += 1
-                else:
-                    fontname = "mptr-font"
-                    fontsize = _choose_font_size(
-                        text=text,
-                        rect=r,
-                        fontname=fontname,
-                        fontfile=font_path,
-                        max_size=max_size,
-                        min_size=min_size,
-                        align=int(align),
-                    )
-                    res = new_page.insert_textbox(
-                        r,
-                        text,
-                        fontname=fontname,
-                        fontfile=str(font_path),
-                        fontsize=float(fontsize),
-                        align=int(align),
-                        color=(0, 0, 0),
-                        overlay=True,
-                    )
-                    inserted += 1
-                    if res < 0:
+                    if spare2 < 0:
                         overflow += 1
 
         out.save(output_path, garbage=4, deflate=True)
