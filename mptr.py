@@ -53,6 +53,16 @@ def _next_run_dir(base: Path, docname: str) -> Path:
         n += 1
 
 
+def _docname_from_run_dir(run_dir: Path) -> str:
+    name = run_dir.name
+    if name.lower().endswith(".pdf"):
+        name = name[:-4]
+    parts = name.split(".")
+    if len(parts) >= 2 and parts[-1].isdigit():
+        return ".".join(parts[:-1])
+    return name
+
+
 def _save_sentences(path: Path, sentences: list[Sentence]) -> None:
     write_json(
         path,
@@ -283,13 +293,16 @@ def cmd_render(args: argparse.Namespace) -> int:
     sentences = _load_sentences(artifacts_dir / "sentences.json")
     translations = _extract_translations(artifacts_dir / "translations" / "translations_cache.json")
 
-    pdf_candidates = list(run_dir.glob("*.pdf"))
-    # Prefer original copied into run folder.
-    if pdf_candidates:
-        pdf_path = pdf_candidates[0]
+    docname = _docname_from_run_dir(run_dir)
+    expected_pdf = run_dir / f"{docname}.pdf"
+    if expected_pdf.exists():
+        pdf_path = expected_pdf
     else:
-        raise FileNotFoundError(f"No PDF found in run dir: {run_dir}")
-    docname = pdf_path.stem
+        pdf_candidates = list(run_dir.glob("*.pdf"))
+        if not pdf_candidates:
+            raise FileNotFoundError(f"No PDF found in run dir: {run_dir}")
+        # Fall back to a best-effort guess.
+        pdf_path = sorted(pdf_candidates, key=lambda p: (".highlight" in p.stem, ".korean" in p.stem, p.name))[0]
 
     korean_out = run_dir / f"{docname}.korean.pdf"
     both_out = run_dir / f"{docname}.korean.both.pdf"

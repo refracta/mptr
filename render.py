@@ -6,6 +6,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
+from latex import TexSpan, build_html_with_math, iter_tex_spans, split_text_with_tex, tex_to_svg_batch
 from sentences import Sentence
 from util import normalize_path
 
@@ -15,6 +16,10 @@ class RenderStats:
     inserted: int
     skipped: int
     overflow: int
+
+
+def _has_tex(text: str) -> bool:
+    return any(isinstance(p, TexSpan) for p in split_text_with_tex(text))
 
 
 def _region_to_rect(
@@ -93,6 +98,19 @@ def render_korean_pdf(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     font_path = normalize_path(str(font_path)).resolve()
 
+    # Prepare TeX→SVG map once per render call.
+    tex_spans = iter_tex_spans(translations.values())
+    svg_map = tex_to_svg_batch(tex_spans) if tex_spans else {}
+
+    font_archive = fitz.Archive()
+    font_archive.add((font_path.read_bytes(), "mptr-target.ttf"))
+    css = (
+        '@font-face { font-family: MptrTarget; src: url("mptr-target.ttf"); }\n'
+        ".mptr { font-family: MptrTarget; line-height: 1.2; white-space: pre-wrap; }\n"
+        ".mptr svg { vertical-align: -0.2ex; }\n"
+        ".mptr-math-block { text-align: center; margin: 0.2em 0; }\n"
+    )
+
     by_page: dict[int, list[Sentence]] = {}
     for s in sentences:
         by_page.setdefault(int(s.page), []).append(s)
@@ -143,28 +161,45 @@ def render_korean_pdf(
                 # Heuristic font size bounds based on box height.
                 max_size = min(24.0, max(6.0, r.height * 0.9))
                 min_size = max(4.0, min(8.0, r.height * 0.35))
-                fontname = "mptr-font"
-                fontsize = _choose_font_size(
-                    text=text,
-                    rect=r,
-                    fontname=fontname,
-                    fontfile=font_path,
-                    max_size=max_size,
-                    min_size=min_size,
-                )
 
-                res = page.insert_textbox(
-                    r,
-                    text,
-                    fontname=fontname,
-                    fontfile=str(font_path),
-                    fontsize=float(fontsize),
-                    color=(0, 0, 0),
-                    overlay=True,
-                )
-                inserted += 1
-                if res < 0:
-                    overflow += 1
+                if _has_tex(text):
+                    scale_low = max(0.0, min(1.0, float(min_size) / float(max_size or 1.0)))
+                    html_body = build_html_with_math(text, svg_map)
+                    html_doc = f'<div class="mptr" style="font-size:{max_size:.2f}pt">{html_body}</div>'
+                    spare, scale = page.insert_htmlbox(
+                        r,
+                        html_doc,
+                        css=css,
+                        scale_low=scale_low,
+                        archive=font_archive,
+                        overlay=True,
+                    )
+                    inserted += 1
+                    if spare < 0 or scale < scale_low:
+                        overflow += 1
+                else:
+                    fontname = "mptr-font"
+                    fontsize = _choose_font_size(
+                        text=text,
+                        rect=r,
+                        fontname=fontname,
+                        fontfile=font_path,
+                        max_size=max_size,
+                        min_size=min_size,
+                    )
+
+                    res = page.insert_textbox(
+                        r,
+                        text,
+                        fontname=fontname,
+                        fontfile=str(font_path),
+                        fontsize=float(fontsize),
+                        color=(0, 0, 0),
+                        overlay=True,
+                    )
+                    inserted += 1
+                    if res < 0:
+                        overflow += 1
 
         doc.save(output_path, garbage=4, deflate=True)
     finally:
@@ -187,6 +222,18 @@ def render_side_by_side_pdf(
     output_path = normalize_path(str(output_path)).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     font_path = normalize_path(str(font_path)).resolve()
+
+    tex_spans = iter_tex_spans(translations.values())
+    svg_map = tex_to_svg_batch(tex_spans) if tex_spans else {}
+
+    font_archive = fitz.Archive()
+    font_archive.add((font_path.read_bytes(), "mptr-target.ttf"))
+    css = (
+        '@font-face { font-family: MptrTarget; src: url("mptr-target.ttf"); }\n'
+        ".mptr { font-family: MptrTarget; line-height: 1.2; white-space: pre-wrap; }\n"
+        ".mptr svg { vertical-align: -0.2ex; }\n"
+        ".mptr-math-block { text-align: center; margin: 0.2em 0; }\n"
+    )
 
     by_page: dict[int, list[Sentence]] = {}
     for s in sentences:
@@ -248,27 +295,44 @@ def render_side_by_side_pdf(
 
                 max_size = min(24.0, max(6.0, r.height * 0.9))
                 min_size = max(4.0, min(8.0, r.height * 0.35))
-                fontname = "mptr-font"
-                fontsize = _choose_font_size(
-                    text=text,
-                    rect=r,
-                    fontname=fontname,
-                    fontfile=font_path,
-                    max_size=max_size,
-                    min_size=min_size,
-                )
-                res = new_page.insert_textbox(
-                    r,
-                    text,
-                    fontname=fontname,
-                    fontfile=str(font_path),
-                    fontsize=float(fontsize),
-                    color=(0, 0, 0),
-                    overlay=True,
-                )
-                inserted += 1
-                if res < 0:
-                    overflow += 1
+
+                if _has_tex(text):
+                    scale_low = max(0.0, min(1.0, float(min_size) / float(max_size or 1.0)))
+                    html_body = build_html_with_math(text, svg_map)
+                    html_doc = f'<div class="mptr" style="font-size:{max_size:.2f}pt">{html_body}</div>'
+                    spare, scale = new_page.insert_htmlbox(
+                        r,
+                        html_doc,
+                        css=css,
+                        scale_low=scale_low,
+                        archive=font_archive,
+                        overlay=True,
+                    )
+                    inserted += 1
+                    if spare < 0 or scale < scale_low:
+                        overflow += 1
+                else:
+                    fontname = "mptr-font"
+                    fontsize = _choose_font_size(
+                        text=text,
+                        rect=r,
+                        fontname=fontname,
+                        fontfile=font_path,
+                        max_size=max_size,
+                        min_size=min_size,
+                    )
+                    res = new_page.insert_textbox(
+                        r,
+                        text,
+                        fontname=fontname,
+                        fontfile=str(font_path),
+                        fontsize=float(fontsize),
+                        color=(0, 0, 0),
+                        overlay=True,
+                    )
+                    inserted += 1
+                    if res < 0:
+                        overflow += 1
 
         out.save(output_path, garbage=4, deflate=True)
     finally:
@@ -276,4 +340,3 @@ def render_side_by_side_pdf(
         src.close()
 
     return RenderStats(inserted=inserted, skipped=skipped, overflow=overflow)
-
