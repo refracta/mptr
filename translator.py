@@ -68,6 +68,30 @@ def _now_utc() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _jsonable(obj: Any) -> Any:
+    if obj is None:
+        return None
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, list):
+        return [_jsonable(x) for x in obj]
+    if isinstance(obj, dict):
+        return {str(k): _jsonable(v) for k, v in obj.items()}
+    dump = getattr(obj, "model_dump", None)
+    if callable(dump):
+        try:
+            return dump()
+        except Exception:
+            return None
+    to_dict = getattr(obj, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return to_dict()
+        except Exception:
+            return None
+    return str(obj)
+
+
 def _load_cache(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -99,7 +123,7 @@ async def _translate_one(
                 translated_text=(resp.output_text or "").strip(),
                 model=model,
                 response_id=getattr(resp, "id", None),
-                usage=getattr(resp, "usage", None),
+                usage=_jsonable(getattr(resp, "usage", None)),
                 created_at=_now_utc(),
             )
         except Exception as e:
@@ -132,6 +156,7 @@ async def translate_sentences(
     client = AsyncOpenAI(api_key=key)
 
     sem = asyncio.Semaphore(max(1, parallelism))
+    lock = asyncio.Lock()
     results: dict[str, TranslationResult] = {}
 
     async def run_one(s: Sentence) -> None:
@@ -157,6 +182,8 @@ async def translate_sentences(
                 temperature=temperature,
                 max_retries=max_retries,
             )
+
+        async with lock:
             results[s.sentence_id] = tr
             cache[s.sentence_id] = {
                 "sentence_id": tr.sentence_id,
@@ -167,10 +194,8 @@ async def translate_sentences(
                 "usage": tr.usage,
                 "created_at": tr.created_at,
             }
-            # Write-through so retries/reruns keep partial progress.
             write_json(cache_path, cache)
 
     await asyncio.gather(*(run_one(s) for s in sentences))
     write_json(cache_path, cache)
     return results
-
