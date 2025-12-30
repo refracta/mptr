@@ -79,7 +79,12 @@ def load_mathpix_creds(config: dict) -> MathpixCreds:
 
     fallback = config.get("mathpix_fallback_convert_py")
     if fallback:
-        creds = _extract_default_creds_from_convert_py(normalize_path(str(fallback)).resolve())
+        fb_path = normalize_path(str(fallback))
+        if not fb_path.is_absolute():
+            fb_path = (Path(__file__).resolve().parent / fb_path).resolve()
+        else:
+            fb_path = fb_path.resolve()
+        creds = _extract_default_creds_from_convert_py(fb_path)
         if creds:
             return creds
 
@@ -201,4 +206,3 @@ def ensure_converted(
         },
     )
     return out_dir
-
