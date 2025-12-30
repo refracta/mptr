@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from highlight import create_sentence_highlight_pdf
+from images import export_pdf_pages_to_png, whiteout_sentence_regions
 from mathpix import ensure_converted
 from render import render_korean_pdf, render_side_by_side_pdf
 from sentences import Sentence, sentences_from_lines_json
@@ -135,6 +136,10 @@ def cmd_all(args: argparse.Namespace) -> int:
     artifacts_dir = run_dir / "artifacts"
     translations_dir = artifacts_dir / "translations"
     translations_dir.mkdir(parents=True, exist_ok=True)
+    images_pages_dir = artifacts_dir / "images" / "pages"
+    images_whiteout_dir = artifacts_dir / "images" / "whiteout"
+    images_pages_dir.mkdir(parents=True, exist_ok=True)
+    images_whiteout_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy original
     shutil.copy2(pdf_path, run_dir / pdf_path.name)
@@ -151,7 +156,23 @@ def cmd_all(args: argparse.Namespace) -> int:
         opacity=float(config.get("highlight_opacity") or 0.25),
     )
 
-    # 3-5) Translate sentences (cached)
+    # 3) Export page images + whiteout artifacts (for qualitative inspection)
+    page_pngs = export_pdf_pages_to_png(
+        pdf_path=pdf_path,
+        out_dir=images_pages_dir,
+        dpi=int(config.get("render_dpi") or 144),
+    )
+    by_page = {}
+    for s in sentences:
+        by_page.setdefault(int(s.page), []).append(s)
+    for i, png in enumerate(page_pngs, start=1):
+        whiteout_sentence_regions(
+            page_png=png,
+            sentences=by_page.get(i, []),
+            output_png=images_whiteout_dir / png.name,
+        )
+
+    # 4-5) Translate sentences (cached)
     instructions = _load_prompt(config=config, repo_dir=repo_dir)
     tr_results = asyncio.run(
         translate_sentences(
@@ -199,6 +220,55 @@ def cmd_all(args: argparse.Namespace) -> int:
     print(f"Run folder: {run_dir}")
     print(f"Korean PDF: {korean_out}")
     print(f"Both PDF: {both_out}")
+    return 0
+
+
+def cmd_translate(args: argparse.Namespace) -> int:
+    repo_dir = Path(__file__).resolve().parent
+    config_path = normalize_path(args.config).resolve()
+    config = load_config(config_path)
+
+    pdf_path = normalize_path(args.pdf).resolve()
+    docname = pdf_path.stem
+
+    conv_dir = ensure_converted(pdf_path, base_dir=repo_dir / "conversion", config=config, force=args.force_convert)
+
+    lines_json_path = conv_dir / f"{docname}.lines.json"
+    lines_json = read_json(lines_json_path)
+    sentences = sentences_from_lines_json(
+        lines_json,
+        indent_ratio=float(config.get("sentence_indent_ratio") or 0.015),
+        spacing_factor=float(config.get("sentence_spacing_factor") or 1.6),
+        min_text_len=int(config.get("sentence_min_text_len") or 1),
+    )
+
+    run_dir = _next_run_dir(repo_dir / "translation", docname)
+    artifacts_dir = run_dir / "artifacts"
+    translations_dir = artifacts_dir / "translations"
+    translations_dir.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(pdf_path, run_dir / pdf_path.name)
+    write_json(artifacts_dir / "config_resolved.json", config)
+    _save_sentences(artifacts_dir / "sentences.json", sentences)
+
+    highlight_path = run_dir / f"{docname}.highlight.pdf"
+    create_sentence_highlight_pdf(
+        pdf_path=pdf_path,
+        sentences=sentences,
+        output_path=highlight_path,
+        opacity=float(config.get("highlight_opacity") or 0.25),
+    )
+
+    instructions = _load_prompt(config=config, repo_dir=repo_dir)
+    asyncio.run(
+        translate_sentences(
+            sentences,
+            config=config,
+            instructions=instructions,
+            out_dir=translations_dir,
+        )
+    )
+    print(f"Run folder: {run_dir}")
     return 0
 
 
@@ -261,6 +331,11 @@ def main() -> int:
     p_all.add_argument("--force-convert", action="store_true", help="Force re-convert")
     p_all.set_defaults(func=cmd_all)
 
+    p_translate = sub.add_parser("translate", help="Translate only (use cached conversion)")
+    p_translate.add_argument("--pdf", required=True, help="Input PDF path")
+    p_translate.add_argument("--force-convert", action="store_true", help="Force re-convert")
+    p_translate.set_defaults(func=cmd_translate)
+
     p_render = sub.add_parser("render", help="Render PDFs again from a run folder")
     p_render.add_argument("--run", required=True, help="Run folder path (translation/<DOC>.<N>.pdf)")
     p_render.set_defaults(func=cmd_render)
@@ -271,4 +346,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
