@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,17 +69,18 @@ def _ensure_mathjax_installed(repo_dir: Path) -> None:
     )
 
 
-_SVG_CACHE: dict[tuple[str, bool], str] = {}
+_SVG_CACHE: dict[tuple[str, bool, float], str] = {}
 
 
-def tex_to_svg_batch(spans: list[TexSpan]) -> dict[tuple[str, bool], str]:
+def tex_to_svg_batch(spans: list[TexSpan], *, math_scale: float = 1.0) -> dict[tuple[str, bool], str]:
     if not spans:
         return {}
 
-    want = {(s.tex, bool(s.display)) for s in spans}
-    missing = [s for s in spans if (s.tex, bool(s.display)) not in _SVG_CACHE]
+    scale_key = round(float(math_scale), 4)
+    want3 = {(s.tex, bool(s.display), scale_key) for s in spans}
+    missing = [s for s in spans if (s.tex, bool(s.display), scale_key) not in _SVG_CACHE]
     if not missing:
-        return {k: _SVG_CACHE[k] for k in want if k in _SVG_CACHE}
+        return {(tex, disp): _SVG_CACHE[(tex, disp, scale_key)] for (tex, disp, _s) in want3 if (tex, disp, scale_key) in _SVG_CACHE}
 
     repo_dir = _repo_dir()
     _ensure_mathjax_installed(repo_dir)
@@ -86,10 +88,13 @@ def tex_to_svg_batch(spans: list[TexSpan]) -> dict[tuple[str, bool], str]:
     script = repo_dir / "scripts" / "tex2svg.mjs"
     req = [{"tex": s.tex, "display": bool(s.display)} for s in missing]
 
+    env = dict(os.environ)
+    env["MPTR_MATH_SCALE"] = str(float(math_scale))
     proc = subprocess.run(
         ["node", str(script)],
         input=json.dumps(req).encode("utf-8"),
         cwd=str(repo_dir),
+        env=env,
         capture_output=True,
         check=False,
     )
@@ -103,9 +108,9 @@ def tex_to_svg_batch(spans: list[TexSpan]) -> dict[tuple[str, bool], str]:
         out = proc.stdout.decode("utf-8", errors="replace")[:2000]
         raise RuntimeError(f"TeX→SVG conversion returned invalid JSON: {e}: {out}") from e
 
-    out: dict[tuple[str, bool], str] = {}
+    out: dict[tuple[str, bool, float], str] = {}
     if not isinstance(items, list):
-        return out
+        return {}
     for it in items:
         if not isinstance(it, dict):
             continue
@@ -113,10 +118,10 @@ def tex_to_svg_batch(spans: list[TexSpan]) -> dict[tuple[str, bool], str]:
         display = bool(it.get("display"))
         svg = it.get("svg")
         if isinstance(svg, str) and svg.strip():
-            out[(tex, display)] = svg
+            out[(tex, display, scale_key)] = svg
 
     _SVG_CACHE.update(out)
-    return {k: _SVG_CACHE[k] for k in want if k in _SVG_CACHE}
+    return {(tex, disp): _SVG_CACHE[(tex, disp, scale_key)] for (tex, disp, _s) in want3 if (tex, disp, scale_key) in _SVG_CACHE}
 
 
 def build_html_with_math(text: str, svg_map: dict[tuple[str, bool], str]) -> str:

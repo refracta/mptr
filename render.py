@@ -113,6 +113,7 @@ def render_korean_pdf(
     whiteout: bool = True,
     padding: float = 1.0,
     align: int = fitz.TEXT_ALIGN_JUSTIFY,
+    math_scale: float = 1.15,
 ) -> RenderStats:
     pdf_path = normalize_path(str(pdf_path)).resolve()
     output_path = normalize_path(str(output_path)).resolve()
@@ -121,7 +122,7 @@ def render_korean_pdf(
 
     # Prepare TeX→SVG map once per render call.
     tex_spans = iter_tex_spans(translations.values())
-    svg_map = tex_to_svg_batch(tex_spans) if tex_spans else {}
+    svg_map = tex_to_svg_batch(tex_spans, math_scale=float(math_scale)) if tex_spans else {}
 
     font_archive = fitz.Archive()
     font_archive.add((font_path.read_bytes(), "mptr-target.ttf"))
@@ -243,6 +244,7 @@ def render_side_by_side_pdf(
     padding: float = 1.0,
     separator: bool = True,
     align: int = fitz.TEXT_ALIGN_JUSTIFY,
+    math_scale: float = 1.15,
 ) -> RenderStats:
     pdf_path = normalize_path(str(pdf_path)).resolve()
     output_path = normalize_path(str(output_path)).resolve()
@@ -250,7 +252,7 @@ def render_side_by_side_pdf(
     font_path = normalize_path(str(font_path)).resolve()
 
     tex_spans = iter_tex_spans(translations.values())
-    svg_map = tex_to_svg_batch(tex_spans) if tex_spans else {}
+    svg_map = tex_to_svg_batch(tex_spans, math_scale=float(math_scale)) if tex_spans else {}
 
     font_archive = fitz.Archive()
     font_archive.add((font_path.read_bytes(), "mptr-target.ttf"))

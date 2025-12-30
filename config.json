@@ -16,6 +16,7 @@
   "render_padding": 1.0,
   "highlight_opacity": 0.25,
   "render_align": "justify",
+  "math_scale": 1.15,
 
   "sentence_indent_ratio": 0.015,
   "sentence_spacing_factor": 1.6,

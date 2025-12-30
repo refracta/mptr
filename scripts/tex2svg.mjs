@@ -30,11 +30,14 @@ function main() {
   const parsed = input ? JSON.parse(input) : [];
   const reqs = Array.isArray(parsed) ? parsed : [parsed];
 
+  const scaleEnv = Number(process.env.MPTR_MATH_SCALE ?? "1");
+  const scale = Number.isFinite(scaleEnv) && scaleEnv > 0 ? scaleEnv : 1;
+
   const adaptor = liteAdaptor();
   RegisterHTMLHandler(adaptor);
 
   const tex = new TeX({ packages: AllPackages });
-  const svg = new SVG({ fontCache: "none" });
+  const svg = new SVG({ fontCache: "none", scale });
   const html = mathjax.document("", { InputJax: tex, OutputJax: svg });
 
   const out = reqs.map((req) => {
@@ -53,4 +56,3 @@ function main() {
 }
 
 main();
-

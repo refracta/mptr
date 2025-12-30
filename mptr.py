@@ -211,6 +211,7 @@ def cmd_all(args: argparse.Namespace) -> int:
     # 6) Render translation PDFs
     font_path = _resolve_font_path(config=config, repo_dir=repo_dir)
     align = _resolve_align(config)
+    math_scale = float(config.get("math_scale") or 1.15)
     korean_out = run_dir / f"{docname}.korean.pdf"
     both_out = run_dir / f"{docname}.korean.both.pdf"
 
@@ -223,6 +224,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         whiteout=True,
         padding=float(config.get("render_padding") or 1.0),
         align=align,
+        math_scale=math_scale,
     )
     stats_both = render_side_by_side_pdf(
         pdf_path=pdf_path,
@@ -233,6 +235,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         padding=float(config.get("render_padding") or 1.0),
         separator=True,
         align=align,
+        math_scale=math_scale,
     )
 
     write_json(
@@ -308,6 +311,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     config = load_config(normalize_path(args.config).resolve())
     font_path = _resolve_font_path(config=config, repo_dir=repo_dir)
     align = _resolve_align(config)
+    math_scale = float(config.get("math_scale") or 1.15)
 
     docname = _docname_from_run_dir(run_dir)
     expected_pdf = run_dir / f"{docname}.pdf"
@@ -353,6 +357,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         whiteout=True,
         padding=float(config.get("render_padding") or 1.0),
         align=align,
+        math_scale=math_scale,
     )
     render_side_by_side_pdf(
         pdf_path=pdf_path,
@@ -363,6 +368,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         padding=float(config.get("render_padding") or 1.0),
         separator=True,
         align=align,
+        math_scale=math_scale,
     )
     print("OK")
     return 0
