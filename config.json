@@ -16,6 +16,7 @@
   "render_padding": 1.0,
   "highlight_opacity": 0.25,
   "render_align": "justify",
+  "min_font_factor": 0.2,
   "math_scale": 1.15,
   "math_inline_cap": 1.0,
 

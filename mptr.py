@@ -213,6 +213,7 @@ def cmd_all(args: argparse.Namespace) -> int:
     align = _resolve_align(config)
     math_scale = float(config.get("math_scale") or 1.15)
     math_inline_cap = float(config.get("math_inline_cap") or 1.0)
+    min_font_factor = float(config.get("min_font_factor") or 0.2)
     korean_out = run_dir / f"{docname}.korean.pdf"
     both_out = run_dir / f"{docname}.korean.both.pdf"
 
@@ -227,6 +228,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         align=align,
         math_scale=math_scale,
         math_inline_cap=math_inline_cap,
+        min_font_factor=min_font_factor,
     )
     stats_both = render_side_by_side_pdf(
         pdf_path=pdf_path,
@@ -239,6 +241,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         align=align,
         math_scale=math_scale,
         math_inline_cap=math_inline_cap,
+        min_font_factor=min_font_factor,
     )
 
     write_json(
@@ -316,6 +319,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     align = _resolve_align(config)
     math_scale = float(config.get("math_scale") or 1.15)
     math_inline_cap = float(config.get("math_inline_cap") or 1.0)
+    min_font_factor = float(config.get("min_font_factor") or 0.2)
 
     docname = _docname_from_run_dir(run_dir)
     expected_pdf = run_dir / f"{docname}.pdf"
@@ -363,6 +367,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         align=align,
         math_scale=math_scale,
         math_inline_cap=math_inline_cap,
+        min_font_factor=min_font_factor,
     )
     render_side_by_side_pdf(
         pdf_path=pdf_path,
@@ -375,6 +380,7 @@ def cmd_render(args: argparse.Namespace) -> int:
         align=align,
         math_scale=math_scale,
         math_inline_cap=math_inline_cap,
+        min_font_factor=min_font_factor,
     )
     print("OK")
     return 0

@@ -353,6 +353,7 @@ def render_korean_pdf(
     align: int = fitz.TEXT_ALIGN_JUSTIFY,
     math_scale: float = 1.15,
     math_inline_cap: float = 1.0,
+    min_font_factor: float = 0.2,
 ) -> RenderStats:
     pdf_path = normalize_path(str(pdf_path)).resolve()
     output_path = normalize_path(str(output_path)).resolve()
@@ -418,7 +419,7 @@ def render_korean_pdf(
 
                 # Heuristic font size bounds based on box height.
                 max_size = min(24.0, max(6.0, r.height * 0.9))
-                min_size = max(4.0, min(8.0, r.height * 0.35))
+                min_size = max(3.0, min(8.0, r.height * float(min_font_factor)))
 
                 layout = _choose_layout(
                     text=text,
@@ -470,6 +471,7 @@ def render_side_by_side_pdf(
     align: int = fitz.TEXT_ALIGN_JUSTIFY,
     math_scale: float = 1.15,
     math_inline_cap: float = 1.0,
+    min_font_factor: float = 0.2,
 ) -> RenderStats:
     pdf_path = normalize_path(str(pdf_path)).resolve()
     output_path = normalize_path(str(output_path)).resolve()
@@ -557,7 +559,7 @@ def render_side_by_side_pdf(
                 )
 
                 max_size = min(24.0, max(6.0, r.height * 0.9))
-                min_size = max(4.0, min(8.0, r.height * 0.35))
+                min_size = max(3.0, min(8.0, r.height * float(min_font_factor)))
 
                 layout = _choose_layout(
                     text=text,
