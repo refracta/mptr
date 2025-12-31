@@ -135,9 +135,18 @@ def build_sentence_groups(
         deltas = [y0s[i + 1] - y0s[i] for i in range(len(y0s) - 1)]
         typical_dy = _median([d for d in deltas if d > 0]) or median_h
 
+        # Estimate typical inter-line "gap" from (next y0 - prev y1).
+        y1s = [_line_bbox(l)[3] for l in col_lines]
+        gaps = [y0s[i + 1] - y1s[i] for i in range(len(y0s) - 1)]
+        typical_gap = _median([g for g in gaps if g > 0])
+        if typical_gap is None:
+            typical_gap = max(0.0, typical_dy - median_h)
+
         indent_thresh = max(page_width * indent_ratio, typical_dy * 0.6)
         break_dy = typical_dy * spacing_factor
-        gap_thresh = max(2.0, median_h * 0.25)
+        # Allow looser merges by using the *typical* gap between lines (plus a
+        # fallback based on bbox height) rather than a fixed fraction only.
+        gap_thresh = max(2.0, median_h * 0.25, float(typical_gap) * spacing_factor)
 
         cur: list[dict] = []
         prev: dict | None = None
@@ -160,8 +169,13 @@ def build_sentence_groups(
             else:
                 if (x0 - prev_x0) > indent_thresh and x0 > (baseline_x0 + indent_thresh * 0.5):
                     start_new = True
-                elif (prev_x0 - x0) > indent_thresh and _looks_like_new_item((line.get("text") or "")):
-                    start_new = True
+                elif (prev_x0 - x0) > indent_thresh:
+                    if prev_x0 > (baseline_x0 + indent_thresh * 0.5) and x0 <= (
+                        baseline_x0 + indent_thresh * 0.5
+                    ):
+                        start_new = True
+                    elif _looks_like_new_item((line.get("text") or "")):
+                        start_new = True
 
             if start_new:
                 groups.append(cur)

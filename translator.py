@@ -100,6 +100,12 @@ def _load_cache(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _cache_hit(entry: Any, sentence: Sentence) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    return str(entry.get("source_text") or "") == sentence.source_text
+
+
 def _chunked(items: list[Sentence], chunk_size: int) -> list[list[Sentence]]:
     if chunk_size <= 0:
         raise ValueError("chunk_size must be > 0")
@@ -299,16 +305,17 @@ async def translate_sentences(
 
         pending: list[Sentence] = []
         for s in sentences:
-            if s.sentence_id in cache and isinstance(cache[s.sentence_id], dict):
-                entry = cache[s.sentence_id]
+            entry = cache.get(s.sentence_id)
+            if _cache_hit(entry, s):
+                entry_dict = entry
                 results[s.sentence_id] = TranslationResult(
                     sentence_id=s.sentence_id,
-                    source_text=entry.get("source_text", s.source_text),
-                    translated_text=entry.get("translated_text", ""),
-                    model=entry.get("model", model),
-                    response_id=entry.get("response_id"),
-                    usage=entry.get("usage"),
-                    created_at=entry.get("created_at", ""),
+                    source_text=entry_dict.get("source_text", s.source_text),
+                    translated_text=entry_dict.get("translated_text", ""),
+                    model=entry_dict.get("model", model),
+                    response_id=entry_dict.get("response_id"),
+                    usage=entry_dict.get("usage"),
+                    created_at=entry_dict.get("created_at", ""),
                 )
                 continue
 
@@ -374,16 +381,17 @@ async def translate_sentences(
     results: dict[str, TranslationResult] = {}
 
     async def run_one(s: Sentence) -> None:
-        if s.sentence_id in cache and isinstance(cache[s.sentence_id], dict):
-            entry = cache[s.sentence_id]
+        entry = cache.get(s.sentence_id)
+        if _cache_hit(entry, s):
+            entry_dict = entry
             results[s.sentence_id] = TranslationResult(
                 sentence_id=s.sentence_id,
-                source_text=entry.get("source_text", s.source_text),
-                translated_text=entry.get("translated_text", ""),
-                model=entry.get("model", model),
-                response_id=entry.get("response_id"),
-                usage=entry.get("usage"),
-                created_at=entry.get("created_at", ""),
+                source_text=entry_dict.get("source_text", s.source_text),
+                translated_text=entry_dict.get("translated_text", ""),
+                model=entry_dict.get("model", model),
+                response_id=entry_dict.get("response_id"),
+                usage=entry_dict.get("usage"),
+                created_at=entry_dict.get("created_at", ""),
             )
             return
 
