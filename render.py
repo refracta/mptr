@@ -402,14 +402,17 @@ def render_korean_pdf(
                     skipped += 1
                     continue
 
-                r = _region_to_rect(s.region, scale_x=scale_x, scale_y=scale_y, padding=padding)
-                if r.is_empty or r.is_infinite or r.width <= 2 or r.height <= 2:
+                r_text = _region_to_rect(s.region, scale_x=scale_x, scale_y=scale_y, padding=padding)
+                if r_text.is_empty or r_text.is_infinite or r_text.width <= 2 or r_text.height <= 2:
                     skipped += 1
                     continue
 
                 if whiteout:
+                    # Whiteout should fully cover the original text region; padding is only for
+                    # where we *place* the translated text (to reduce overflow).
+                    r_whiteout = _region_to_rect(s.region, scale_x=scale_x, scale_y=scale_y, padding=0.0)
                     page.draw_rect(
-                        r,
+                        r_whiteout,
                         color=None,
                         fill=(1, 1, 1),
                         width=0,
@@ -418,12 +421,12 @@ def render_korean_pdf(
                     )
 
                 # Heuristic font size bounds based on box height.
-                max_size = min(24.0, max(6.0, r.height * 0.9))
-                min_size = max(3.0, min(8.0, r.height * float(min_font_factor)))
+                max_size = min(24.0, max(6.0, r_text.height * 0.9))
+                min_size = max(3.0, min(8.0, r_text.height * float(min_font_factor)))
 
                 layout = _choose_layout(
                     text=text,
-                    rect=r,
+                    rect=r_text,
                     font=font,
                     svg_map=svg_map,
                     max_size=max_size,
@@ -438,7 +441,7 @@ def render_korean_pdf(
 
                 _render_layout(
                     page,
-                    rect=r,
+                    rect=r_text,
                     layout=layout,
                     fontfile=font_path,
                     fontname="mptr-font",
@@ -537,20 +540,27 @@ def render_side_by_side_pdf(
                     skipped += 1
                     continue
 
-                r = _region_to_rect(
+                r_text = _region_to_rect(
                     s.region,
                     scale_x=scale_x,
                     scale_y=scale_y,
                     x_offset=w,
                     padding=padding,
                 )
-                if r.is_empty or r.is_infinite or r.width <= 2 or r.height <= 2:
+                if r_text.is_empty or r_text.is_infinite or r_text.width <= 2 or r_text.height <= 2:
                     skipped += 1
                     continue
 
                 # Whiteout original text on the right copy, then add translated text.
+                r_whiteout = _region_to_rect(
+                    s.region,
+                    scale_x=scale_x,
+                    scale_y=scale_y,
+                    x_offset=w,
+                    padding=0.0,
+                )
                 new_page.draw_rect(
-                    r,
+                    r_whiteout,
                     color=None,
                     fill=(1, 1, 1),
                     width=0,
@@ -558,12 +568,12 @@ def render_side_by_side_pdf(
                     fill_opacity=1,
                 )
 
-                max_size = min(24.0, max(6.0, r.height * 0.9))
-                min_size = max(3.0, min(8.0, r.height * float(min_font_factor)))
+                max_size = min(24.0, max(6.0, r_text.height * 0.9))
+                min_size = max(3.0, min(8.0, r_text.height * float(min_font_factor)))
 
                 layout = _choose_layout(
                     text=text,
-                    rect=r,
+                    rect=r_text,
                     font=font,
                     svg_map=svg_map,
                     max_size=max_size,
@@ -578,7 +588,7 @@ def render_side_by_side_pdf(
 
                 _render_layout(
                     new_page,
-                    rect=r,
+                    rect=r_text,
                     layout=layout,
                     fontfile=font_path,
                     fontname="mptr-font",
