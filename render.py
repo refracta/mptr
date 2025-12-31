@@ -108,6 +108,7 @@ def _layout_sentence(
     fontsize: float,
     svg_map: dict[tuple[str, bool], str],
     math_scale: float,
+    math_inline_cap: float,
 ) -> _Layout | None:
     if rect.width <= 0 or rect.height <= 0:
         return None
@@ -117,6 +118,8 @@ def _layout_sentence(
     line_height = float(fontsize) * 1.2
 
     ex_pt = (float(fontsize) * float(math_scale)) / 2.0
+    em_h = (float(font.ascender) - float(font.descender)) * float(fontsize)
+    inline_cap_h = float(em_h) * float(max(0.1, math_inline_cap))
 
     lines: list[list[_TextPiece | _SpacePiece | _MathPiece]] = []
     cur: list[_TextPiece | _SpacePiece | _MathPiece] = []
@@ -181,13 +184,23 @@ def _layout_sentence(
                 flush()
                 continue
 
-            if (cur_w + w) > rect.width and cur:
+            if not piece.display and piece.height > inline_cap_h and piece.height > 0:
+                s = inline_cap_h / piece.height
+                piece = _MathPiece(
+                    key=piece.key,
+                    width=piece.width * s,
+                    height=piece.height * s,
+                    valign=piece.valign * s,
+                    display=piece.display,
+                )
+
+            if (cur_w + piece.width) > rect.width and cur:
                 flush()
-            if w > rect.width and not cur:
+            if piece.width > rect.width and not cur:
                 # Cannot fit even on an empty line.
                 return None
             cur.append(piece)
-            cur_w += w
+            cur_w += piece.width
             continue
 
         s = str(part)
@@ -234,6 +247,7 @@ def _choose_layout(
     max_size: float,
     min_size: float,
     math_scale: float,
+    math_inline_cap: float,
 ) -> _Layout | None:
     lo = float(min_size)
     hi = float(max_size)
@@ -247,6 +261,7 @@ def _choose_layout(
             fontsize=mid,
             svg_map=svg_map,
             math_scale=math_scale,
+            math_inline_cap=math_inline_cap,
         )
         if layout is not None:
             best = layout
@@ -337,6 +352,7 @@ def render_korean_pdf(
     padding: float = 1.0,
     align: int = fitz.TEXT_ALIGN_JUSTIFY,
     math_scale: float = 1.15,
+    math_inline_cap: float = 1.0,
 ) -> RenderStats:
     pdf_path = normalize_path(str(pdf_path)).resolve()
     output_path = normalize_path(str(output_path)).resolve()
@@ -412,6 +428,7 @@ def render_korean_pdf(
                     max_size=max_size,
                     min_size=min_size,
                     math_scale=float(math_scale),
+                    math_inline_cap=float(math_inline_cap),
                 )
                 inserted += 1
                 if layout is None:
@@ -452,6 +469,7 @@ def render_side_by_side_pdf(
     separator: bool = True,
     align: int = fitz.TEXT_ALIGN_JUSTIFY,
     math_scale: float = 1.15,
+    math_inline_cap: float = 1.0,
 ) -> RenderStats:
     pdf_path = normalize_path(str(pdf_path)).resolve()
     output_path = normalize_path(str(output_path)).resolve()
@@ -549,6 +567,7 @@ def render_side_by_side_pdf(
                     max_size=max_size,
                     min_size=min_size,
                     math_scale=float(math_scale),
+                    math_inline_cap=float(math_inline_cap),
                 )
                 inserted += 1
                 if layout is None:
