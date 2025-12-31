@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,13 @@ from typing import Iterable
 class TexSpan:
     tex: str
     display: bool
+
+
+@dataclass(frozen=True)
+class SvgMetrics:
+    width_ex: float
+    height_ex: float
+    valign_ex: float
 
 
 LATEX_SPAN_RE = (
@@ -55,6 +63,27 @@ def iter_tex_spans(texts: Iterable[str]) -> list[TexSpan]:
                 seen.add(key)
                 out.append(part)
     return out
+
+
+def parse_mathjax_svg_metrics(svg: str) -> SvgMetrics | None:
+    """
+    Parse width/height and inline vertical-align from a MathJax-generated SVG root.
+
+    Expected patterns:
+      width="2.904ex" height="2.519ex" style="vertical-align: -0.696ex;"
+    """
+    if not svg:
+        return None
+    m_w = re.search(r'width="([0-9.]+)ex"', svg)
+    m_h = re.search(r'height="([0-9.]+)ex"', svg)
+    if not m_w or not m_h:
+        return None
+    width_ex = float(m_w.group(1))
+    height_ex = float(m_h.group(1))
+
+    m_va = re.search(r"vertical-align:\s*([+-]?[0-9.]+)ex", svg)
+    valign_ex = float(m_va.group(1)) if m_va else 0.0
+    return SvgMetrics(width_ex=width_ex, height_ex=height_ex, valign_ex=valign_ex)
 
 
 def _repo_dir() -> Path:
