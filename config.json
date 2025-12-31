@@ -3,6 +3,8 @@
   "language": "korean",
   "model": "gpt-5.2",
   "parallelism": 6,
+  "use_codex": false,
+  "codex_chunk_size": 25,
 
   "target_font": "NanumGothic.ttf",
 

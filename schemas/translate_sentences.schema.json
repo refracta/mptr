@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "translations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sentence_id": { "type": "string" },
+          "translated_text": { "type": "string" }
+        },
+        "required": ["sentence_id", "translated_text"],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+  "required": ["translations"],
+  "additionalProperties": false
+}
