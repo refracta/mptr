@@ -137,7 +137,7 @@ async def _codex_translate_chunk(
     schema_path: Path,
     chunk_index: int,
 ) -> dict[str, TranslationResult]:
-    model = str(config.get("codex_model") or config.get("model") or "gpt-5.2")
+    model = str(config.get("codex_model") or "gpt-5.2")
 
     prompt = _build_codex_prompt(instructions=instructions, sentences=sentences)
 
@@ -289,7 +289,7 @@ async def translate_sentences(
         codex_chunk_size = int(config.get("codex_chunk_size") or 25)
         codex_parallelism_raw = config.get("codex_parallelism")
         if codex_parallelism_raw is None:
-            codex_parallelism = min(3, max(1, parallelism))
+            codex_parallelism = max(1, parallelism)
         else:
             codex_parallelism = int(codex_parallelism_raw)
 
